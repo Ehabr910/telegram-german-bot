@@ -5,7 +5,7 @@ import time
 import json
 
 # ================== الإعدادات ==================
-TOKEN = os.getenv("BOT_TOKEN")  # مهم لــ Railway
+TOKEN = os.getenv("BOT_TOKEN")  # Railway Environment Variable
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
 
@@ -31,7 +31,7 @@ def start(update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================== معالج الأزرار ==================
+# ================== معالج الأزرار (مُعدّل) ==================
 def button_handler(update, context):
     query = update.callback_query
     query.answer()
@@ -43,7 +43,8 @@ def button_handler(update, context):
     elif data == "back":
         start_over(query)
 
-    elif "_sem" in data and "_file_" not in data:
+    # year1_sem1 / year2_sem2
+    elif data.startswith("year") and data.count("_") == 1:
         show_files(query, data)
 
     elif data.startswith("choose_"):
@@ -101,7 +102,7 @@ def show_files(query, data):
                 )
             ])
 
-    # ملفات لها روابط فقط (حتى لو لم يوجد ملف)
+    # ملفات لها روابط فقط
     for key in FILE_LINKS:
         if key.startswith(f"{year}/semester{sem[-1]}/"):
             file_name = key.split("/")[-1]
@@ -120,7 +121,7 @@ def show_files(query, data):
     keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data=year)])
     query.edit_message_text("اختر الملف:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ================== سؤال ملف أم رابط ==================
+# ================== سؤال: ملف أم رابط ==================
 def ask_file_or_link(query, data):
     _, year, sem, file_name = data.split("_", 3)
 
