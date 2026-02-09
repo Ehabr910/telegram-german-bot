@@ -5,7 +5,7 @@ import time
 import json
 
 # ================== الإعدادات ==================
-TOKEN = os.getenv("BOT_TOKEN")  # Railway Environment Variable
+TOKEN = os.getenv("BOT_TOKEN")  # مهم لــ Railway
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
 
@@ -31,7 +31,7 @@ def start(update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================== معالج الأزرار (مُعدّل) ==================
+# ================== معالج الأزرار ==================
 def button_handler(update, context):
     query = update.callback_query
     query.answer()
@@ -43,8 +43,8 @@ def button_handler(update, context):
     elif data == "back":
         start_over(query)
 
-    # year1_sem1 / year2_sem2
-    elif data.startswith("year") and data.count("_") == 1:
+    # ✅ الإصلاح هنا (عرض الملفات)
+    elif "_sem" in data and not data.startswith(("choose_", "sendfile_", "sendlink_")):
         show_files(query, data)
 
     elif data.startswith("choose_"):
@@ -92,7 +92,7 @@ def show_files(query, data):
 
     keyboard = []
 
-    # ملفات موجودة فعليًا
+    # ملفات موجودة محليًا
     if os.path.exists(folder_path):
         for file in os.listdir(folder_path):
             keyboard.append([
@@ -115,13 +115,13 @@ def show_files(query, data):
                 ])
 
     if not keyboard:
-        query.message.reply_text("❌ لا توجد ملفات أو روابط.")
+        query.edit_message_text("❌ لا توجد ملفات أو روابط.")
         return
 
     keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data=year)])
     query.edit_message_text("اختر الملف:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ================== سؤال: ملف أم رابط ==================
+# ================== سؤال ملف أم رابط ==================
 def ask_file_or_link(query, data):
     _, year, sem, file_name = data.split("_", 3)
 
@@ -144,7 +144,7 @@ def send_file(query, data, context):
     if not os.path.exists(file_path):
         query.message.reply_text(
             "⚠️ الملف غير موجود محليًا.\n"
-            "استخدم خيار الرابط إن وُجد."
+            "يمكنك استخدام خيار الرابط."
         )
         return
 
