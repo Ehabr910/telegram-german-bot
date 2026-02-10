@@ -8,7 +8,6 @@ import json
 TOKEN = os.getenv("BOT_TOKEN")
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
-ALLOWED_EXTS = (".png", ".jpg", ".jpeg", ".pdf")
 
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود")
@@ -82,46 +81,53 @@ def show_semesters(query, year):
     safe_edit(query, "اختر الفصل:", keyboard)
 
 def start_over(query):
-    start_keyboard = [
+    keyboard = [
         [InlineKeyboardButton("📘 السنة الأولى", callback_data="year_year1")],
         [InlineKeyboardButton("📗 السنة الثانية", callback_data="year_year2")],
         [InlineKeyboardButton("📙 السنة الثالثة", callback_data="year_year3")]
     ]
-    safe_edit(query, "اختر السنة:", start_keyboard)
+    safe_edit(query, "اختر السنة:", keyboard)
 
-# ================== عرض الملفات ==================
+# ================== عرض الملفات (بدون أي فلترة) ==================
 def show_files(query, year, sem, context):
     folder = os.path.join(BASE_PATH, year, f"semester{sem[-1]}")
     keyboard = []
     files_map = {}
     idx = 0
 
+    # ===== الملفات المحلية =====
     local_files = []
     if os.path.exists(folder):
         local_files = [
             f for f in os.listdir(folder)
-            if f.lower().endswith(ALLOWED_EXTS)
+            if os.path.isfile(os.path.join(folder, f))
         ]
 
-    # ملفات محلية
     for f in local_files:
-        display = os.path.splitext(f)[0]
         files_map[str(idx)] = {"year": year, "sem": sem, "file": f}
-        keyboard.append([InlineKeyboardButton(f"📄 {display}", callback_data=f"file_{idx}")])
+        keyboard.append([
+            InlineKeyboardButton(f"📄 {f}", callback_data=f"file_{idx}")
+        ])
         idx += 1
 
-    # ملفات روابط
-    for key in FILE_LINKS:
-        prefix = f"{year}/semester{sem[-1]}/"
-        if key.startswith(prefix):
-            fname = key.split("/")[-1]
-            if fname in local_files or not fname.lower().endswith(ALLOWED_EXTS):
-                continue
+    # ===== روابط links.json =====
+    prefix = f"{year}/semester{sem[-1]}/"
 
-            display = os.path.splitext(fname)[0]
-            files_map[str(idx)] = {"year": year, "sem": sem, "file": fname}
-            keyboard.append([InlineKeyboardButton(f"🔗 {display}", callback_data=f"file_{idx}")])
-            idx += 1
+    for key in FILE_LINKS:
+        if not key.startswith(prefix):
+            continue
+
+        fname = key.split("/")[-1]
+
+        # منع التكرار فقط
+        if fname in local_files:
+            continue
+
+        files_map[str(idx)] = {"year": year, "sem": sem, "file": fname}
+        keyboard.append([
+            InlineKeyboardButton(f"🔗 {fname}", callback_data=f"file_{idx}")
+        ])
+        idx += 1
 
     if not keyboard:
         safe_edit(query, "❌ لا توجد ملفات أو روابط.", [
@@ -130,7 +136,10 @@ def show_files(query, year, sem, context):
         return
 
     context.user_data["files"] = files_map
-    keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")])
+    keyboard.append([
+        InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")
+    ])
+
     safe_edit(query, "اختر الملف:", keyboard)
 
 # ================== اختيار طريقة الإرسال ==================
@@ -152,22 +161,29 @@ def ask_file_or_link(query, fid, context):
     key = f"{info['year']}/semester{info['sem'][-1]}/{info['file']}"
 
     if os.path.exists(file_path):
-        buttons.append([InlineKeyboardButton("⬇️ تحميل الملف", callback_data=f"sendfile_{fid}")])
+        buttons.append([
+            InlineKeyboardButton("⬇️ تحميل الملف", callback_data=f"sendfile_{fid}")
+        ])
 
     if key in FILE_LINKS:
-        buttons.append([InlineKeyboardButton("🔗 فتح الرابط", callback_data=f"sendlink_{fid}")])
+        buttons.append([
+            InlineKeyboardButton("🔗 فتح الرابط", callback_data=f"sendlink_{fid}")
+        ])
 
-    buttons.append([InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_files_{info['year']}_{info['sem']}")])
+    buttons.append([
+        InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_files_{info['year']}_{info['sem']}")
+    ])
 
     safe_edit(
         query,
-        f"📄 {os.path.splitext(info['file'])[0]}\n\nاختر طريقة الحصول:",
+        f"📄 {info['file']}\n\nاختر طريقة الحصول:",
         buttons
     )
 
 # ================== إرسال الملف ==================
 def send_file(query, fid, context):
     info = context.user_data["files"].get(fid)
+
     path = os.path.join(
         BASE_PATH,
         info["year"],
