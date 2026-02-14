@@ -61,7 +61,6 @@ def admin_panel(update: Update, context: CallbackContext):
     keyboard = [
         [InlineKeyboardButton("✉️ رسالة جماعية", callback_data="admin_broadcast")],
         [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_users")],
-        [InlineKeyboardButton("➕ إضافة رابط جديد", callback_data="admin_add_link")],
         [InlineKeyboardButton("🚫 حظر مستخدم", callback_data="admin_ban_user")],
         [InlineKeyboardButton("✅ فك حظر مستخدم", callback_data="admin_unban_user")],
         [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="admin_info")]
@@ -105,6 +104,52 @@ def button_handler(update: Update, context: CallbackContext):
         for u in USERS.values():
             text += f"- {u['name']} ({u['id']})\n"
         query.edit_message_text(text)
+    elif data == "admin_ban_user":
+        query.edit_message_text("🚫 أرسل الآن معرف المستخدم الذي تريد حظره:")
+        context.user_data["waiting_ban"] = True
+    elif data == "admin_unban_user":
+        query.edit_message_text("✅ أرسل الآن معرف المستخدم الذي تريد فك الحظر عنه:")
+        context.user_data["waiting_unban"] = True
+    elif data == "admin_info":
+        text = (
+            f"ℹ️ معلومات البوت:\n"
+            f"- عدد الملفات: {sum([len(files) for files in FILE_LINKS.values()])}\n"
+            f"- عدد المستخدمين: {len(USERS)}\n"
+            f"- عدد المحظورين: {len(BANNED)}"
+        )
+        query.edit_message_text(text)
+
+# ================== التعامل مع حظر وفك الحظر ==================
+def handle_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    if BROADCAST_WAITING.get(user_id):
+        # البث الجماعي
+        count = 0
+        for u in USERS.values():
+            try:
+                context.bot.send_message(chat_id=u["id"], text=text)
+                count += 1
+            except:
+                continue
+        update.message.reply_text(f"✅ تم إرسال الرسالة إلى {count} مستخدم/مستخدمين.")
+        BROADCAST_WAITING.pop(user_id)
+    elif context.user_data.get("waiting_ban"):
+        BANNED[text] = {"id": text}
+        if text in USERS:
+            USERS.pop(text)
+        save_json(BANNED_FILE, BANNED)
+        save_json(USERS_FILE, USERS)
+        update.message.reply_text(f"🚫 تم حظر المستخدم {text}.")
+        context.user_data["waiting_ban"] = False
+    elif context.user_data.get("waiting_unban"):
+        if text in BANNED:
+            BANNED.pop(text)
+            save_json(BANNED_FILE, BANNED)
+            update.message.reply_text(f"✅ تم فك الحظر عن المستخدم {text}.")
+        else:
+            update.message.reply_text("❌ هذا المستخدم غير محظور.")
+        context.user_data["waiting_unban"] = False
 
 # ================== عرض الفصول ==================
 def show_semesters(query, year):
@@ -214,21 +259,6 @@ def safe_edit(query, text, keyboard=None):
     except:
         pass
 
-# ================== البث الجماعي ==================
-def broadcast_text(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if BROADCAST_WAITING.get(user_id):
-        message = update.message.text
-        count = 0
-        for u in USERS.values():
-            try:
-                context.bot.send_message(chat_id=u["id"], text=message)
-                count += 1
-            except:
-                continue
-        update.message.reply_text(f"✅ تم إرسال الرسالة إلى {count} مستخدم/مستخدمين.")
-        BROADCAST_WAITING.pop(user_id)
-
 # ================== تشغيل البوت ==================
 def main():
     updater = Updater(TOKEN, use_context=True)
@@ -237,7 +267,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("admin", admin_panel))
     dp.add_handler(CallbackQueryHandler(button_handler))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, broadcast_text))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
     updater.start_polling()
     updater.idle()
