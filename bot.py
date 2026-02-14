@@ -60,7 +60,11 @@ def admin_panel(update: Update, context: CallbackContext):
 
     keyboard = [
         [InlineKeyboardButton("✉️ رسالة جماعية", callback_data="admin_broadcast")],
-        [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_users")]
+        [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_users")],
+        [InlineKeyboardButton("➕ إضافة رابط جديد", callback_data="admin_add_link")],
+        [InlineKeyboardButton("🚫 حظر مستخدم", callback_data="admin_ban_user")],
+        [InlineKeyboardButton("✅ فك حظر مستخدم", callback_data="admin_unban_user")],
+        [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="admin_info")]
     ]
     update.message.reply_text(
         "⚙️ لوحة تحكم الأدمن:",
@@ -75,20 +79,15 @@ def button_handler(update: Update, context: CallbackContext):
 
     if data.startswith("year_"):
         show_semesters(query, data.split("_")[1])
-
     elif data.startswith("sem_"):
         year, sem = data.split("_")[1:3]
         show_files(query, year, sem, context)
-
     elif data.startswith("file_"):
         ask_file_or_link(query, data.split("_")[1], context)
-
     elif data.startswith("sendfile_"):
         send_file(query, data.split("_")[1], context)
-
     elif data.startswith("sendlink_"):
         send_link(query, data.split("_")[1], context)
-
     elif data.startswith("back_"):
         parts = data.split("_")
         if parts[1] == "year":
@@ -97,12 +96,10 @@ def button_handler(update: Update, context: CallbackContext):
             show_semesters(query, parts[2])
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
-
     elif data == "admin_broadcast":
         user_id = query.from_user.id
         BROADCAST_WAITING[user_id] = True
         query.edit_message_text("✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:")
-
     elif data == "admin_users":
         text = "👥 قائمة المستخدمين:\n"
         for u in USERS.values():
@@ -195,8 +192,9 @@ def send_file(query, fid, context):
         return
     context.bot.send_chat_action(query.message.chat_id, ChatAction.UPLOAD_DOCUMENT)
     time.sleep(0.3)
+    user_name = query.from_user.full_name
     with open(path, "rb") as f:
-        query.message.reply_document(f)
+        query.message.reply_document(f, caption=f"📄 الملف: {info['file']}\n👤 طلبه: {user_name}")
 
 # ================== إرسال الرابط ==================
 def send_link(query, fid, context):
@@ -206,7 +204,8 @@ def send_link(query, fid, context):
     if not link:
         query.message.reply_text("❌ لا يوجد رابط.")
         return
-    query.message.reply_text(f"🔗 رابط الملف:\n{link}")
+    user_name = query.from_user.full_name
+    query.message.reply_text(f"🔗 رابط الملف: {link}\n👤 طلبه: {user_name}")
 
 # ================== تعديل آمن ==================
 def safe_edit(query, text, keyboard=None):
