@@ -4,7 +4,7 @@ import os
 import json
 
 # ================== الإعدادات ==================
-TOKEN = "PUT_YOUR_TOKEN_HERE"  # ضع توكن البوت هنا
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 5037555049           # ضع ID الأدمن هنا
 LINKS_FILE = "links.json"
 USERS_FILE = "users.json"
