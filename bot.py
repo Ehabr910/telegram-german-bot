@@ -111,20 +111,42 @@ def button_handler(update: Update, context: CallbackContext):
         query.edit_message_text("✅ أرسل الآن معرف المستخدم الذي تريد فك الحظر عنه:")
         context.user_data["waiting_unban"] = True
     elif data == "admin_info":
-        text = (
-            f"ℹ️ معلومات البوت:\n"
-            f"- عدد الملفات: {sum([len(files) for files in FILE_LINKS.values()])}\n"
-            f"- عدد المستخدمين: {len(USERS)}\n"
-            f"- عدد المحظورين: {len(BANNED)}"
-        )
-        query.edit_message_text(text)
+        info_text = "ℹ️ معلومات البوت:\n"
+        info_text += f"- عدد المستخدمين: {len(USERS)}\n"
+        info_text += f"- عدد المحظورين: {len(BANNED)}\n\n"
+
+        total_local = 0
+        total_links = 0
+
+        for year in ["year1", "year2", "year3"]:
+            info_text += f"📘 {year}:\n"
+            max_sem = 2 if year != "year3" else 1
+            for sem_num in range(1, max_sem+1):
+                folder = os.path.join(BASE_PATH, year, f"semester{sem_num}")
+                local_files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))] if os.path.exists(folder) else []
+                local_count = len(local_files)
+                total_local += local_count
+
+                link_count = 0
+                prefix = f"{year}/semester{sem_num}/"
+                for key in FILE_LINKS:
+                    if key.startswith(prefix):
+                        fname = key.split("/")[-1]
+                        if fname not in local_files:
+                            link_count += 1
+                total_links += link_count
+                info_text += f"   - الفصل {sem_num}: {local_count} ملف محلي، {link_count} رابط\n"
+
+        info_text += f"\n📂 إجمالي الملفات المحلية: {total_local}\n"
+        info_text += f"🔗 إجمالي الروابط: {total_links}"
+
+        query.edit_message_text(info_text)
 
 # ================== التعامل مع حظر وفك الحظر ==================
 def handle_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     if BROADCAST_WAITING.get(user_id):
-        # البث الجماعي
         count = 0
         for u in USERS.values():
             try:
