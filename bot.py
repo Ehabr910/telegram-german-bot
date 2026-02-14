@@ -1,5 +1,5 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ChatAction
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ChatAction, Update
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 import os
 import time
 import json
@@ -9,45 +9,35 @@ TOKEN = os.getenv("BOT_TOKEN")
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
 USERS_FILE = "users.json"
+BANNED_FILE = "banned.json"
 
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود")
 
-# ================== تحميل روابط الملفات ==================
-def load_links():
-    if not os.path.exists(LINKS_FILE):
+# ================== تحميل البيانات ==================
+def load_json(file):
+    if not os.path.exists(file):
         return {}
-    with open(LINKS_FILE, "r", encoding="utf-8") as f:
+    with open(file, "r", encoding="utf-8") as f:
         return json.load(f)
 
-FILE_LINKS = load_links()
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ================== حفظ المستخدم ==================
-def save_user(user):
-    if not os.path.exists(USERS_FILE):
-        users = []
-    else:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            try:
-                users = json.load(f)
-            except:
-                users = []
+FILE_LINKS = load_json(LINKS_FILE)
+USERS = load_json(USERS_FILE)
+BANNED = load_json(BANNED_FILE)
 
-    if not isinstance(users, list):
-        users = []
-
-    if any(u.get("id") == user.id for u in users):
-        return
-
-    users.append({"id": user.id, "name": user.full_name})
-
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+BROADCAST_WAITING = {}  # انتظار رسالة جماعية
 
 # ================== /start ==================
-def start(update, context):
+def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    save_user(user)
+    if str(user.id) not in USERS and str(user.id) not in BANNED:
+        USERS[str(user.id)] = {"id": user.id, "name": user.full_name}
+        save_json(USERS_FILE, USERS)
+
     keyboard = [
         [InlineKeyboardButton("📘 السنة الأولى", callback_data="year_year1")],
         [InlineKeyboardButton("📗 السنة الثانية", callback_data="year_year2")],
@@ -59,23 +49,46 @@ def start(update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# ================== لوحة الأدمن ==================
+ADMIN_IDS = [5037555049]  # ضع هنا رقم معرف الأدمن
+
+def admin_panel(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        update.message.reply_text("❌ أنت لست الأدمن!")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("✉️ رسالة جماعية", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_users")]
+    ]
+    update.message.reply_text(
+        "⚙️ لوحة تحكم الأدمن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 # ================== معالج الأزرار ==================
-def button_handler(update, context):
+def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     data = query.data
 
     if data.startswith("year_"):
         show_semesters(query, data.split("_")[1])
+
     elif data.startswith("sem_"):
         year, sem = data.split("_")[1:3]
         show_files(query, year, sem, context)
+
     elif data.startswith("file_"):
         ask_file_or_link(query, data.split("_")[1], context)
+
     elif data.startswith("sendfile_"):
         send_file(query, data.split("_")[1], context)
+
     elif data.startswith("sendlink_"):
         send_link(query, data.split("_")[1], context)
+
     elif data.startswith("back_"):
         parts = data.split("_")
         if parts[1] == "year":
@@ -84,6 +97,17 @@ def button_handler(update, context):
             show_semesters(query, parts[2])
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
+
+    elif data == "admin_broadcast":
+        user_id = query.from_user.id
+        BROADCAST_WAITING[user_id] = True
+        query.edit_message_text("✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:")
+
+    elif data == "admin_users":
+        text = "👥 قائمة المستخدمين:\n"
+        for u in USERS.values():
+            text += f"- {u['name']} ({u['id']})\n"
+        query.edit_message_text(text)
 
 # ================== عرض الفصول ==================
 def show_semesters(query, year):
@@ -136,9 +160,7 @@ def show_files(query, year, sem, context):
         idx += 1
 
     if not keyboard:
-        safe_edit(query, "❌ لا توجد ملفات أو روابط.", [
-            [InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")]
-        ])
+        safe_edit(query, "❌ لا توجد ملفات أو روابط.", [[InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")]])
         return
 
     context.user_data["files"] = files_map
@@ -171,7 +193,6 @@ def send_file(query, fid, context):
     if not os.path.exists(path):
         query.message.reply_text("⚠️ الملف غير موجود.")
         return
-
     context.bot.send_chat_action(query.message.chat_id, ChatAction.UPLOAD_DOCUMENT)
     time.sleep(0.3)
     with open(path, "rb") as f:
@@ -194,13 +215,32 @@ def safe_edit(query, text, keyboard=None):
     except:
         pass
 
+# ================== البث الجماعي ==================
+def broadcast_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if BROADCAST_WAITING.get(user_id):
+        message = update.message.text
+        count = 0
+        for u in USERS.values():
+            try:
+                context.bot.send_message(chat_id=u["id"], text=message)
+                count += 1
+            except:
+                continue
+        update.message.reply_text(f"✅ تم إرسال الرسالة إلى {count} مستخدم/مستخدمين.")
+        BROADCAST_WAITING.pop(user_id)
+
 # ================== تشغيل البوت ==================
 def main():
-    updater = Updater(TOKEN)
+    updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
+
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("admin", admin_panel))
     dp.add_handler(CallbackQueryHandler(button_handler))
-    updater.start_polling()  # يجب أن يكون هناك نسخة واحدة فقط تعمل
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, broadcast_text))
+
+    updater.start_polling()
     updater.idle()
 
 if __name__ == "__main__":
