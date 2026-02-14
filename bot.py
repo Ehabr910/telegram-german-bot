@@ -6,7 +6,7 @@ import json
 
 # ================== الإعدادات ==================
 TOKEN = os.getenv("BOT_TOKEN") or "PUT_YOUR_TOKEN_HERE"
-ADMIN_ID = 5037555049  # ← ضع ID الأدمن هنا
+ADMIN_ID = 5037555049  # ضع ID الأدمن هنا
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
 USERS_FILE = "users.json"
@@ -21,12 +21,21 @@ def load_users():
     with open(USERS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_user(user_id):
+def save_user(user):
     users = load_users()
-    if user_id not in users:
-        users.append(user_id)
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=2)
+
+    for u in users:
+        if u["id"] == user.id:
+            return  # المستخدم مسجل مسبقًا
+
+    users.append({
+        "id": user.id,
+        "username": user.username,
+        "name": user.first_name
+    })
+
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
 
 # ================== الروابط ==================
 def load_links():
@@ -39,7 +48,7 @@ FILE_LINKS = load_links()
 
 # ================== /start ==================
 def start(update, context):
-    save_user(update.effective_user.id)
+    save_user(update.effective_user)
 
     keyboard = [
         [InlineKeyboardButton("📘 السنة الأولى", callback_data="year_year1")],
@@ -52,14 +61,20 @@ def start(update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================== عدد المستخدمين (للأدمن فقط) ==================
-def users_count(update, context):
+# ================== عدد المستخدمين (أدمن فقط) ==================
+def users_command(update, context):
     if update.effective_user.id != ADMIN_ID:
         update.message.reply_text("⛔ هذا الأمر مخصص للإدارة فقط.")
         return
 
     users = load_users()
-    update.message.reply_text(f"👥 عدد مستخدمي البوت: {len(users)}")
+    msg = f"👥 عدد مستخدمي البوت: {len(users)}\n\n"
+
+    for i, u in enumerate(users, start=1):
+        name = f"@{u['username']}" if u["username"] else u["name"]
+        msg += f"{i}- {name} | ID: {u['id']}\n"
+
+    update.message.reply_text(msg)
 
 # ================== الأزرار ==================
 def button_handler(update, context):
@@ -184,7 +199,11 @@ def send_file(query, fid, context):
 def send_link(query, fid, context):
     info = context.user_data["files"][fid]
     key = f"{info['year']}/semester{info['sem'][-1]}/{info['file']}"
-    query.message.reply_text(FILE_LINKS[key])
+
+    user = query.from_user
+    name = f"@{user.username}" if user.username else user.first_name
+
+    query.message.reply_text(f"🔗 الرابط:\n{FILE_LINKS[key]}\n\n👤 بواسطة: {name}")
 
 # ================== تعديل آمن ==================
 def safe_edit(query, text, keyboard=None):
@@ -197,9 +216,11 @@ def safe_edit(query, text, keyboard=None):
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
+
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("users", users_count))
+    dp.add_handler(CommandHandler("users", users_command))
     dp.add_handler(CallbackQueryHandler(button_handler))
+
     updater.start_polling()
     updater.idle()
 
