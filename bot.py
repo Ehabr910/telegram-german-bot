@@ -5,14 +5,30 @@ import time
 import json
 
 # ================== الإعدادات ==================
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN") or "PUT_YOUR_TOKEN_HERE"
+ADMIN_ID = 5037555049  # ← ضع ID الأدمن هنا
 BASE_PATH = "files"
 LINKS_FILE = "links.json"
+USERS_FILE = "users.json"
 
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود")
 
-# ================== تحميل روابط الملفات ==================
+# ================== المستخدمون ==================
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return []
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_user(user_id):
+    users = load_users()
+    if user_id not in users:
+        users.append(user_id)
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, indent=2)
+
+# ================== الروابط ==================
 def load_links():
     if not os.path.exists(LINKS_FILE):
         return {}
@@ -23,18 +39,29 @@ FILE_LINKS = load_links()
 
 # ================== /start ==================
 def start(update, context):
+    save_user(update.effective_user.id)
+
     keyboard = [
         [InlineKeyboardButton("📘 السنة الأولى", callback_data="year_year1")],
         [InlineKeyboardButton("📗 السنة الثانية", callback_data="year_year2")],
         [InlineKeyboardButton("📙 السنة الثالثة", callback_data="year_year3")]
     ]
+
     update.message.reply_text(
-        "👋 أهلاً بك في بوت مجتمع اللغة الألمانية 🇩🇪\n"
-        "✨ اختر السنة للمتابعة:",
+        "👋 أهلاً بك في بوت مجتمع اللغة الألمانية 🇩🇪\nاختر السنة:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================== معالج الأزرار ==================
+# ================== عدد المستخدمين (للأدمن فقط) ==================
+def users_count(update, context):
+    if update.effective_user.id != ADMIN_ID:
+        update.message.reply_text("⛔ هذا الأمر مخصص للإدارة فقط.")
+        return
+
+    users = load_users()
+    update.message.reply_text(f"👥 عدد مستخدمي البوت: {len(users)}")
+
+# ================== الأزرار ==================
 def button_handler(update, context):
     query = update.callback_query
     query.answer()
@@ -65,7 +92,7 @@ def button_handler(update, context):
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
 
-# ================== عرض الفصول ==================
+# ================== الفصول ==================
 def show_semesters(query, year):
     semesters = {
         "year1": ["sem1", "sem2"],
@@ -88,112 +115,62 @@ def start_over(query):
     ]
     safe_edit(query, "اختر السنة:", keyboard)
 
-# ================== عرض الملفات (بدون أي فلترة) ==================
+# ================== الملفات ==================
 def show_files(query, year, sem, context):
     folder = os.path.join(BASE_PATH, year, f"semester{sem[-1]}")
     keyboard = []
     files_map = {}
     idx = 0
 
-    # ===== الملفات المحلية =====
     local_files = []
     if os.path.exists(folder):
-        local_files = [
-            f for f in os.listdir(folder)
-            if os.path.isfile(os.path.join(folder, f))
-        ]
+        local_files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
 
     for f in local_files:
         files_map[str(idx)] = {"year": year, "sem": sem, "file": f}
-        keyboard.append([
-            InlineKeyboardButton(f"📄 {f}", callback_data=f"file_{idx}")
-        ])
+        keyboard.append([InlineKeyboardButton(f"📄 {f}", callback_data=f"file_{idx}")])
         idx += 1
 
-    # ===== روابط links.json =====
     prefix = f"{year}/semester{sem[-1]}/"
-
     for key in FILE_LINKS:
-        if not key.startswith(prefix):
-            continue
-
-        fname = key.split("/")[-1]
-
-        # منع التكرار فقط
-        if fname in local_files:
-            continue
-
-        files_map[str(idx)] = {"year": year, "sem": sem, "file": fname}
-        keyboard.append([
-            InlineKeyboardButton(f"🔗 {fname}", callback_data=f"file_{idx}")
-        ])
-        idx += 1
+        if key.startswith(prefix):
+            fname = key.split("/")[-1]
+            if fname not in local_files:
+                files_map[str(idx)] = {"year": year, "sem": sem, "file": fname}
+                keyboard.append([InlineKeyboardButton(f"🔗 {fname}", callback_data=f"file_{idx}")])
+                idx += 1
 
     if not keyboard:
-        safe_edit(query, "❌ لا توجد ملفات أو روابط.", [
-            [InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")]
-        ])
+        safe_edit(query, "❌ لا توجد ملفات.", [[InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")]])
         return
 
     context.user_data["files"] = files_map
-    keyboard.append([
-        InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")
-    ])
-
+    keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_sem_{year}")])
     safe_edit(query, "اختر الملف:", keyboard)
 
-# ================== اختيار طريقة الإرسال ==================
+# ================== طريقة الإرسال ==================
 def ask_file_or_link(query, fid, context):
-    info = context.user_data["files"].get(fid)
-    if not info:
-        query.message.reply_text("❌ الملف غير معروف.")
-        return
-
+    info = context.user_data["files"][fid]
     buttons = []
 
-    file_path = os.path.join(
-        BASE_PATH,
-        info["year"],
-        f"semester{info['sem'][-1]}",
-        info["file"]
-    )
-
+    file_path = os.path.join(BASE_PATH, info["year"], f"semester{info['sem'][-1]}", info["file"])
     key = f"{info['year']}/semester{info['sem'][-1]}/{info['file']}"
 
     if os.path.exists(file_path):
-        buttons.append([
-            InlineKeyboardButton("⬇️ تحميل الملف", callback_data=f"sendfile_{fid}")
-        ])
-
+        buttons.append([InlineKeyboardButton("⬇️ تحميل الملف", callback_data=f"sendfile_{fid}")])
     if key in FILE_LINKS:
-        buttons.append([
-            InlineKeyboardButton("🔗 فتح الرابط", callback_data=f"sendlink_{fid}")
-        ])
+        buttons.append([InlineKeyboardButton("🔗 فتح الرابط", callback_data=f"sendlink_{fid}")])
 
-    buttons.append([
-        InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_files_{info['year']}_{info['sem']}")
-    ])
-
-    safe_edit(
-        query,
-        f"📄 {info['file']}\n\nاختر طريقة الحصول:",
-        buttons
-    )
+    buttons.append([InlineKeyboardButton("⬅️ رجوع", callback_data=f"back_files_{info['year']}_{info['sem']}")])
+    safe_edit(query, f"📄 {info['file']}\nاختر الطريقة:", buttons)
 
 # ================== إرسال الملف ==================
 def send_file(query, fid, context):
-    info = context.user_data["files"].get(fid)
+    info = context.user_data["files"][fid]
+    path = os.path.join(BASE_PATH, info["year"], f"semester{info['sem'][-1]}", info["file"])
 
-    path = os.path.join(
-        BASE_PATH,
-        info["year"],
-        f"semester{info['sem'][-1]}",
-        info["file"]
-    )
-
-    if not os.path.exists(path):
-        query.message.reply_text("⚠️ الملف غير موجود.")
-        return
+    user = query.from_user
+    name = f"@{user.username}" if user.username else user.first_name
 
     context.bot.send_chat_action(query.message.chat_id, ChatAction.UPLOAD_DOCUMENT)
     time.sleep(0.3)
@@ -201,33 +178,27 @@ def send_file(query, fid, context):
     with open(path, "rb") as f:
         query.message.reply_document(f)
 
+    query.message.reply_text(f"✅ تم الإرسال بواسطة: {name}")
+
 # ================== إرسال الرابط ==================
 def send_link(query, fid, context):
-    info = context.user_data["files"].get(fid)
+    info = context.user_data["files"][fid]
     key = f"{info['year']}/semester{info['sem'][-1]}/{info['file']}"
-
-    link = FILE_LINKS.get(key)
-    if not link:
-        query.message.reply_text("❌ لا يوجد رابط.")
-        return
-
-    query.message.reply_text(f"🔗 رابط الملف:\n{link}")
+    query.message.reply_text(FILE_LINKS[key])
 
 # ================== تعديل آمن ==================
 def safe_edit(query, text, keyboard=None):
     try:
-        query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-        )
+        query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     except:
         pass
 
-# ================== تشغيل البوت ==================
+# ================== تشغيل ==================
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("users", users_count))
     dp.add_handler(CallbackQueryHandler(button_handler))
     updater.start_polling()
     updater.idle()
