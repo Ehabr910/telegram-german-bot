@@ -58,12 +58,7 @@ def start(update: Update, context: CallbackContext):
 # ================== لوحة الأدمن ==================
 ADMIN_IDS = [5037555049]  # ضع هنا رقم معرف الأدمن
 
-def admin_panel(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        update.message.reply_text("❌ أنت لست الأدمن!")
-        return
-
+def admin_panel(query, context):
     keyboard = [
         [InlineKeyboardButton("✉️ رسالة جماعية", callback_data="admin_broadcast")],
         [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_users")],
@@ -71,7 +66,7 @@ def admin_panel(update: Update, context: CallbackContext):
         [InlineKeyboardButton("✅ فك حظر مستخدم", callback_data="admin_unban_user")],
         [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="admin_info")]
     ]
-    update.message.reply_text(
+    query.edit_message_text(
         "⚙️ لوحة تحكم الأدمن:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -111,17 +106,27 @@ def button_handler(update: Update, context: CallbackContext):
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
 
+    # ================== زر الرجوع للوحة الأدمن ==================
+    elif data == "back_admin":
+        admin_panel(query, context)
+
     # ================== إدارة البث ==================
     elif data == "admin_broadcast":
         BROADCAST_WAITING[int(uid)] = True
-        query.edit_message_text("✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:")
+        query.edit_message_text(
+            "✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
+        )
 
     # ================== قائمة المستخدمين ==================
     elif data == "admin_users":
         text = "👥 قائمة المستخدمين:\n"
         for u in USERS.values():
             text += f"- {u['name']} ({u['id']})\n"
-        query.edit_message_text(text)
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
+        )
 
     # ================== حظر المستخدم ==================
     elif data == "admin_ban_user":
@@ -129,7 +134,7 @@ def button_handler(update: Update, context: CallbackContext):
                     for uid, u in USERS.items() if uid not in BANNED]
         if not keyboard:
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين متاحين للحظر", callback_data="none")]]
-        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")])
         query.edit_message_text("🚫 اختر المستخدم الذي تريد حظره:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("ban_"):
@@ -139,7 +144,7 @@ def button_handler(update: Update, context: CallbackContext):
             USERS.pop(uid)
         save_json(BANNED_FILE, BANNED)
         save_json(USERS_FILE, USERS)
-        keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+        keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
         query.edit_message_text(f"🚫 تم حظر المستخدم {uid} بنجاح.", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # ================== فك الحظر ==================
@@ -148,7 +153,7 @@ def button_handler(update: Update, context: CallbackContext):
                     for uid in BANNED]
         if not keyboard:
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين محظورين", callback_data="none")]]
-        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")])
         query.edit_message_text("✅ اختر المستخدم الذي تريد فك الحظر عنه:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("unban_"):
@@ -156,10 +161,10 @@ def button_handler(update: Update, context: CallbackContext):
         if uid in BANNED:
             BANNED.pop(uid)
             save_json(BANNED_FILE, BANNED)
-            keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+            keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
             query.edit_message_text(f"✅ تم فك الحظر عن المستخدم {uid} بنجاح.", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
-            keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+            keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
             query.edit_message_text("❌ هذا المستخدم غير محظور.", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # ================== معلومات البوت ==================
@@ -193,7 +198,10 @@ def button_handler(update: Update, context: CallbackContext):
         info_text += f"\n📂 إجمالي الملفات المحلية: {total_local}\n"
         info_text += f"🔗 إجمالي الروابط: {total_links}"
 
-        query.edit_message_text(info_text)
+        query.edit_message_text(
+            info_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
+        )
 
 # ================== التعامل مع النصوص (بث جماعي) ==================
 def handle_text(update: Update, context: CallbackContext):
@@ -328,7 +336,7 @@ def main():
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("admin", admin_panel))
+    dp.add_handler(CommandHandler("admin", lambda u, c: admin_panel(u.callback_query, c)))
     dp.add_handler(CallbackQueryHandler(button_handler))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
