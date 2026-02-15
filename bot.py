@@ -34,8 +34,14 @@ BROADCAST_WAITING = {}  # انتظار رسالة جماعية
 # ================== /start ==================
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    if str(user.id) not in USERS and str(user.id) not in BANNED:
-        USERS[str(user.id)] = {"id": user.id, "name": user.full_name}
+    uid = str(user.id)
+
+    if uid in BANNED:
+        update.message.reply_text("❌ أنت محظور من استخدام البوت.")
+        return
+
+    if uid not in USERS:
+        USERS[uid] = {"id": user.id, "name": user.full_name}
         save_json(USERS_FILE, USERS)
 
     keyboard = [
@@ -73,6 +79,14 @@ def admin_panel(update: Update, context: CallbackContext):
 # ================== معالج الأزرار ==================
 def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
+    uid = str(query.from_user.id)
+
+    # فحص الحظر
+    if uid in BANNED:
+        query.answer()
+        query.edit_message_text("❌ أنت محظور من استخدام البوت.")
+        return
+
     query.answer()
     data = query.data
 
@@ -99,8 +113,7 @@ def button_handler(update: Update, context: CallbackContext):
 
     # ================== إدارة البث ==================
     elif data == "admin_broadcast":
-        user_id = query.from_user.id
-        BROADCAST_WAITING[user_id] = True
+        BROADCAST_WAITING[int(uid)] = True
         query.edit_message_text("✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:")
 
     # ================== قائمة المستخدمين ==================
@@ -184,9 +197,13 @@ def button_handler(update: Update, context: CallbackContext):
 
 # ================== التعامل مع النصوص (بث جماعي) ==================
 def handle_text(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
+    if user_id in BANNED:
+        update.message.reply_text("❌ أنت محظور من استخدام البوت.")
+        return
+
     text = update.message.text.strip()
-    if BROADCAST_WAITING.get(user_id):
+    if BROADCAST_WAITING.get(int(user_id)):
         count = 0
         for u in USERS.values():
             try:
@@ -195,7 +212,7 @@ def handle_text(update: Update, context: CallbackContext):
             except:
                 continue
         update.message.reply_text(f"✅ تم إرسال الرسالة إلى {count} مستخدم/مستخدمين.")
-        BROADCAST_WAITING.pop(user_id)
+        BROADCAST_WAITING.pop(int(user_id))
 
 # ================== عرض الفصول ==================
 def show_semesters(query, year):
