@@ -29,6 +29,8 @@ FILE_LINKS = load_json(LINKS_FILE)
 USERS = load_json(USERS_FILE)
 BANNED = load_json(BANNED_FILE)
 BROADCAST_WAITING = {}  # انتظار رسالة جماعية
+CONFIRM_BAN = {}        # انتظار تأكيد الحظر
+CONFIRM_UNBAN = {}      # انتظار تأكيد فك الحظر
 
 # ================== /start ==================
 def start(update: Update, context: CallbackContext):
@@ -66,22 +68,18 @@ def admin_panel(update_or_query, context=None):
         [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="admin_info")]
     ]
 
-    # استدعاء من /admin (Update)
     if isinstance(update_or_query, Update):
         user_id = update_or_query.effective_user.id
         if user_id not in ADMIN_IDS:
             update_or_query.message.reply_text("❌ أنت لست الأدمن!")
             return
         update_or_query.message.reply_text("⚙️ لوحة تحكم الأدمن:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    # استدعاء من زر (CallbackQuery)
     else:
         query = update_or_query
         uid = query.from_user.id
         if uid not in ADMIN_IDS:
             query.answer("❌ أنت لست الأدمن!")
             return
-        # إضافة زر الرجوع دائما في لوحة الأدمن
         safe_edit(query, "⚙️ لوحة تحكم الأدمن:", keyboard)
 
 # ================== معالج الأزرار ==================
@@ -89,7 +87,6 @@ def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     uid = str(query.from_user.id)
 
-    # فحص الحظر
     if uid in BANNED:
         query.answer()
         query.edit_message_text("❌ أنت محظور من استخدام البوت.")
@@ -143,15 +140,18 @@ def button_handler(update: Update, context: CallbackContext):
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين متاحين للحظر", callback_data="none")]]
         keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")])
         safe_edit(query, "🚫 اختر المستخدم الذي تريد حظره:", keyboard)
+
     elif data.startswith("ban_"):
-        uid = data.split("_")[1]
-        BANNED[uid] = {"id": uid}
-        if uid in USERS:
-            USERS.pop(uid)
-        save_json(BANNED_FILE, BANNED)
-        save_json(USERS_FILE, USERS)
-        keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
-        safe_edit(query, f"🚫 تم حظر المستخدم {uid} بنجاح.", keyboard)
+        user_to_ban = data.split("_")[1]
+        if user_to_ban not in USERS:
+            safe_edit(query, "❌ هذا المستخدم غير موجود.", [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
+            return
+        user_name = USERS[user_to_ban]["name"]
+        CONFIRM_BAN[int(uid)] = user_to_ban
+        safe_edit(query,
+                  f"⚠️ تأكيد حظر المستخدم:\n👤 الاسم: {user_name}\n🆔 ID: {user_to_ban}\n\n"
+                  f"📩 أرسل 'yes' لتأكيد الحظر أو أي رسالة أخرى للإلغاء.",
+                  [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
 
     # ================== فك الحظر ==================
     elif data == "admin_unban_user":
@@ -161,16 +161,17 @@ def button_handler(update: Update, context: CallbackContext):
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين محظورين", callback_data="none")]]
         keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")])
         safe_edit(query, "✅ اختر المستخدم الذي تريد فك الحظر عنه:", keyboard)
+
     elif data.startswith("unban_"):
-        uid = data.split("_")[1]
-        if uid in BANNED:
-            BANNED.pop(uid)
-            save_json(BANNED_FILE, BANNED)
-            keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
-            safe_edit(query, f"✅ تم فك الحظر عن المستخدم {uid} بنجاح.", keyboard)
-        else:
-            keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
-            safe_edit(query, "❌ هذا المستخدم غير محظور.", keyboard)
+        user_to_unban = data.split("_")[1]
+        if user_to_unban not in BANNED:
+            safe_edit(query, "❌ هذا المستخدم غير محظور.", [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
+            return
+        CONFIRM_UNBAN[int(uid)] = user_to_unban
+        safe_edit(query,
+                  f"⚠️ تأكيد فك الحظر عن المستخدم:\n🆔 ID: {user_to_unban}\n\n"
+                  f"📩 أرسل 'yes' لتأكيد فك الحظر أو أي رسالة أخرى للإلغاء.",
+                  [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
 
     # ================== معلومات البوت ==================
     elif data == "admin_info":
@@ -205,14 +206,47 @@ def button_handler(update: Update, context: CallbackContext):
         keyboard = [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]]
         safe_edit(query, info_text, keyboard)
 
-# ================== التعامل مع النصوص (بث جماعي) ==================
+# ================== التعامل مع النصوص ==================
 def handle_text(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     if user_id in BANNED:
         update.message.reply_text("❌ أنت محظور من استخدام البوت.")
         return
 
-    text = update.message.text.strip()
+    text = update.message.text.strip().lower()
+
+    # ======= تأكيد الحظر =======
+    if int(user_id) in CONFIRM_BAN:
+        target_id = CONFIRM_BAN.pop(int(user_id))
+        if text == "yes":
+            if target_id in USERS:
+                target_name = USERS[target_id]["name"]
+                USERS.pop(target_id)
+            else:
+                target_name = "Unknown"
+            BANNED[target_id] = {"id": target_id}
+            save_json(USERS_FILE, USERS)
+            save_json(BANNED_FILE, BANNED)
+            update.message.reply_text(f"✅ تم حظر المستخدم {target_name} ({target_id}) بنجاح.")
+        else:
+            update.message.reply_text("❌ تم إلغاء الحظر.")
+        return
+
+    # ======= تأكيد فك الحظر =======
+    if int(user_id) in CONFIRM_UNBAN:
+        target_id = CONFIRM_UNBAN.pop(int(user_id))
+        if text == "yes":
+            if target_id in BANNED:
+                BANNED.pop(target_id)
+                save_json(BANNED_FILE, BANNED)
+                update.message.reply_text(f"✅ تم فك الحظر عن المستخدم ({target_id}) بنجاح.")
+            else:
+                update.message.reply_text("❌ هذا المستخدم غير محظور.")
+        else:
+            update.message.reply_text("❌ تم إلغاء فك الحظر.")
+        return
+
+    # ======= البث الجماعي =======
     if BROADCAST_WAITING.get(int(user_id)):
         count = 0
         for u in USERS.values():
@@ -226,15 +260,8 @@ def handle_text(update: Update, context: CallbackContext):
 
 # ================== عرض الفصول ==================
 def show_semesters(query, year):
-    semesters = {
-        "year1": ["sem1", "sem2"],
-        "year2": ["sem1", "sem2"],
-        "year3": ["sem1"]
-    }
-    keyboard = [
-        [InlineKeyboardButton(f"📚 الفصل {s[-1]}", callback_data=f"sem_{year}_{s}")]
-        for s in semesters.get(year, [])
-    ]
+    semesters = {"year1": ["sem1", "sem2"], "year2": ["sem1", "sem2"], "year3": ["sem1"]}
+    keyboard = [[InlineKeyboardButton(f"📚 الفصل {s[-1]}", callback_data=f"sem_{year}_{s}") for s in semesters.get(year, [])]]
     keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back_year")])
     safe_edit(query, "اختر الفصل:", keyboard)
 
