@@ -155,7 +155,7 @@ def button_handler(update: Update, context: CallbackContext):
 
     # ================== فك الحظر ==================
     elif data == "admin_unban_user":
-        keyboard = [[InlineKeyboardButton(f"{BANNED[uid]['id']}", callback_data=f"unban_{uid}")] 
+        keyboard = [[InlineKeyboardButton(f"{USERS.get(uid, {}).get('name','Unknown')} ({uid})", callback_data=f"unban_{uid}")] 
                     for uid in BANNED]
         if not keyboard:
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين محظورين", callback_data="none")]]
@@ -167,9 +167,10 @@ def button_handler(update: Update, context: CallbackContext):
         if user_to_unban not in BANNED:
             safe_edit(query, "❌ هذا المستخدم غير محظور.", [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
             return
+        user_name = USERS.get(user_to_unban, {}).get("name", "Unknown")
         CONFIRM_UNBAN[int(uid)] = user_to_unban
         safe_edit(query,
-                  f"⚠️ تأكيد فك الحظر عن المستخدم:\n🆔 ID: {user_to_unban}\n\n"
+                  f"⚠️ تأكيد فك الحظر عن المستخدم:\n👤 الاسم: {user_name}\n🆔 ID: {user_to_unban}\n\n"
                   f"📩 أرسل 'yes' لتأكيد فك الحظر أو أي رسالة أخرى للإلغاء.",
                   [[InlineKeyboardButton("⬅️ رجوع", callback_data="back_admin")]])
 
@@ -218,12 +219,10 @@ def handle_text(update: Update, context: CallbackContext):
     # ======= تأكيد الحظر =======
     if int(user_id) in CONFIRM_BAN:
         target_id = CONFIRM_BAN.pop(int(user_id))
+        target_name = USERS.get(target_id, {}).get("name", "Unknown")
         if text == "yes":
             if target_id in USERS:
-                target_name = USERS[target_id]["name"]
                 USERS.pop(target_id)
-            else:
-                target_name = "Unknown"
             BANNED[target_id] = {"id": target_id}
             save_json(USERS_FILE, USERS)
             save_json(BANNED_FILE, BANNED)
@@ -235,11 +234,12 @@ def handle_text(update: Update, context: CallbackContext):
     # ======= تأكيد فك الحظر =======
     if int(user_id) in CONFIRM_UNBAN:
         target_id = CONFIRM_UNBAN.pop(int(user_id))
+        target_name = USERS.get(target_id, {}).get("name", "Unknown")
         if text == "yes":
             if target_id in BANNED:
                 BANNED.pop(target_id)
                 save_json(BANNED_FILE, BANNED)
-                update.message.reply_text(f"✅ تم فك الحظر عن المستخدم ({target_id}) بنجاح.")
+                update.message.reply_text(f"✅ تم فك الحظر عن المستخدم {target_name} ({target_id}) بنجاح.")
             else:
                 update.message.reply_text("❌ هذا المستخدم غير محظور.")
         else:
