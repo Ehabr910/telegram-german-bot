@@ -66,19 +66,22 @@ def admin_panel(update_or_query, context=None):
         [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="admin_info")]
     ]
 
-    # استدعاء من /admin
+    # استدعاء من /admin (Update)
     if isinstance(update_or_query, Update):
         user_id = update_or_query.effective_user.id
         if user_id not in ADMIN_IDS:
             update_or_query.message.reply_text("❌ أنت لست الأدمن!")
             return
         update_or_query.message.reply_text("⚙️ لوحة تحكم الأدمن:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:  # استدعاء من زر
+
+    # استدعاء من زر (CallbackQuery)
+    else:
         query = update_or_query
-        uid = str(query.from_user.id)
-        if int(uid) not in ADMIN_IDS:
+        uid = query.from_user.id
+        if uid not in ADMIN_IDS:
             query.answer("❌ أنت لست الأدمن!")
             return
+        # إضافة زر الرجوع دائما في لوحة الأدمن
         safe_edit(query, "⚙️ لوحة تحكم الأدمن:", keyboard)
 
 # ================== معالج الأزرار ==================
@@ -115,10 +118,8 @@ def button_handler(update: Update, context: CallbackContext):
             show_semesters(query, parts[2])
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
-
-    # ================== زر الرجوع للأدمن ==================
-    elif data == "back_admin" or data == "admin_panel":
-        admin_panel(query, context)
+        elif parts[1] == "admin":
+            admin_panel(query, context)
 
     # ================== إدارة البث ==================
     elif data == "admin_broadcast":
@@ -136,7 +137,7 @@ def button_handler(update: Update, context: CallbackContext):
 
     # ================== حظر المستخدم ==================
     elif data == "admin_ban_user":
-        keyboard = [[InlineKeyboardButton(f"{u['name']} ({uid})", callback_data=f"ban_{uid}")]
+        keyboard = [[InlineKeyboardButton(f"{u['name']} ({uid})", callback_data=f"ban_{uid}")] 
                     for uid, u in USERS.items() if uid not in BANNED]
         if not keyboard:
             keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين متاحين للحظر", callback_data="none")]]
