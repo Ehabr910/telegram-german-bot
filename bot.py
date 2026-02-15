@@ -76,6 +76,7 @@ def button_handler(update: Update, context: CallbackContext):
     query.answer()
     data = query.data
 
+    # ================== فصول وملفات ==================
     if data.startswith("year_"):
         show_semesters(query, data.split("_")[1])
     elif data.startswith("sem_"):
@@ -95,21 +96,60 @@ def button_handler(update: Update, context: CallbackContext):
             show_semesters(query, parts[2])
         elif parts[1] == "files":
             show_files(query, parts[2], parts[3], context)
+
+    # ================== إدارة البث ==================
     elif data == "admin_broadcast":
         user_id = query.from_user.id
         BROADCAST_WAITING[user_id] = True
         query.edit_message_text("✉️ أرسل الآن الرسالة التي تريد بثها لجميع المستخدمين:")
+
+    # ================== قائمة المستخدمين ==================
     elif data == "admin_users":
         text = "👥 قائمة المستخدمين:\n"
         for u in USERS.values():
             text += f"- {u['name']} ({u['id']})\n"
         query.edit_message_text(text)
+
+    # ================== حظر المستخدم ==================
     elif data == "admin_ban_user":
-        query.edit_message_text("🚫 أرسل الآن معرف المستخدم الذي تريد حظره:")
-        context.user_data["waiting_ban"] = True
+        keyboard = [[InlineKeyboardButton(f"{u['name']} ({uid})", callback_data=f"ban_{uid}")]
+                    for uid, u in USERS.items() if uid not in BANNED]
+        if not keyboard:
+            keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين متاحين للحظر", callback_data="none")]]
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel")])
+        query.edit_message_text("🚫 اختر المستخدم الذي تريد حظره:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("ban_"):
+        uid = data.split("_")[1]
+        BANNED[uid] = {"id": uid}
+        if uid in USERS:
+            USERS.pop(uid)
+        save_json(BANNED_FILE, BANNED)
+        save_json(USERS_FILE, USERS)
+        keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+        query.edit_message_text(f"🚫 تم حظر المستخدم {uid} بنجاح.", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ================== فك الحظر ==================
     elif data == "admin_unban_user":
-        query.edit_message_text("✅ أرسل الآن معرف المستخدم الذي تريد فك الحظر عنه:")
-        context.user_data["waiting_unban"] = True
+        keyboard = [[InlineKeyboardButton(f"{BANNED[uid]['id']}", callback_data=f"unban_{uid}")] 
+                    for uid in BANNED]
+        if not keyboard:
+            keyboard = [[InlineKeyboardButton("❌ لا يوجد مستخدمين محظورين", callback_data="none")]]
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel")])
+        query.edit_message_text("✅ اختر المستخدم الذي تريد فك الحظر عنه:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("unban_"):
+        uid = data.split("_")[1]
+        if uid in BANNED:
+            BANNED.pop(uid)
+            save_json(BANNED_FILE, BANNED)
+            keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+            query.edit_message_text(f"✅ تم فك الحظر عن المستخدم {uid} بنجاح.", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            keyboard = [[InlineKeyboardButton("⬅️ رجوع للوحة الأدمن", callback_data="admin_panel")]]
+            query.edit_message_text("❌ هذا المستخدم غير محظور.", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ================== معلومات البوت ==================
     elif data == "admin_info":
         info_text = "ℹ️ معلومات البوت:\n"
         info_text += f"- عدد المستخدمين: {len(USERS)}\n"
@@ -142,7 +182,7 @@ def button_handler(update: Update, context: CallbackContext):
 
         query.edit_message_text(info_text)
 
-# ================== التعامل مع حظر وفك الحظر ==================
+# ================== التعامل مع النصوص (بث جماعي) ==================
 def handle_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -156,22 +196,6 @@ def handle_text(update: Update, context: CallbackContext):
                 continue
         update.message.reply_text(f"✅ تم إرسال الرسالة إلى {count} مستخدم/مستخدمين.")
         BROADCAST_WAITING.pop(user_id)
-    elif context.user_data.get("waiting_ban"):
-        BANNED[text] = {"id": text}
-        if text in USERS:
-            USERS.pop(text)
-        save_json(BANNED_FILE, BANNED)
-        save_json(USERS_FILE, USERS)
-        update.message.reply_text(f"🚫 تم حظر المستخدم {text}.")
-        context.user_data["waiting_ban"] = False
-    elif context.user_data.get("waiting_unban"):
-        if text in BANNED:
-            BANNED.pop(text)
-            save_json(BANNED_FILE, BANNED)
-            update.message.reply_text(f"✅ تم فك الحظر عن المستخدم {text}.")
-        else:
-            update.message.reply_text("❌ هذا المستخدم غير محظور.")
-        context.user_data["waiting_unban"] = False
 
 # ================== عرض الفصول ==================
 def show_semesters(query, year):
